@@ -9,6 +9,7 @@ struct ApiResponse {
     // 使用动态键值对存储，适应JSON格式变化
     // 主要字段的快速访问
     String cal_date = "";
+    String cal_time = "";
     String cal_weekday = "";
     String cal_lunar = "";
     String cal_extra = "";

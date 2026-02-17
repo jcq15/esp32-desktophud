@@ -8,6 +8,7 @@ void ApiResponse::clear() {
     success = false;
     rawJson = "";
     cal_date = "";
+    cal_time = "";
     cal_weekday = "";
     cal_lunar = "";
     cal_extra = "";
@@ -71,6 +72,7 @@ bool api_fetch_data(ApiResponse& response) {
         if (doc.containsKey("cal")) {
             JsonObject cal = doc["cal"];
             if (cal.containsKey("date")) response.cal_date = cal["date"].as<String>();
+            if (cal.containsKey("time")) response.cal_time = cal["time"].as<String>();
             if (cal.containsKey("weekday")) response.cal_weekday = cal["weekday"].as<String>();
             if (cal.containsKey("lunar")) response.cal_lunar = cal["lunar"].as<String>();
             if (cal.containsKey("extra")) response.cal_extra = cal["extra"].as<String>();

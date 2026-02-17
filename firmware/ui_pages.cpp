@@ -31,6 +31,16 @@ void renderHome(const AppState& state) {
     }
     
     y += lineHeight + 5;
+
+    // 时间信息 - 使用本地时间
+    display.setFont(&FreeMono9pt7b);
+    display.setCursor(20, y);
+    if (state.localTimeString.length() > 0) {
+        display.print(state.localTimeString);
+    } else {
+        display.print("--:--:--");
+    }
+    y += lineHeight + 5;
     
     // 农历和节日信息
     display.setFont(&FreeMono9pt7b);
@@ -102,4 +112,21 @@ void renderHome(const AppState& state) {
         display.print("WiFi: 未连接 | ");
     }
     display.print(state.statusMessage);
+}
+
+// 只渲染时间区域（用于局部刷新）
+// 坐标对齐到16的整数倍：x=16, y=48, width=256, height=48
+// 文本位置在y=60，区域从y=48开始，高度48，可以完全包含文本
+void renderTimeOnly(const AppState& state) {
+    // 清除时间区域（坐标对齐到16的倍数）
+    display.fillRect(16, 48, 256, 48, GxEPD_WHITE);
+    display.setTextColor(GxEPD_BLACK);
+    display.setRotation(1);
+    display.setFont(&FreeMono9pt7b);
+    display.setCursor(20, 60);  // 文本位置与主渲染函数保持一致
+    if (state.localTimeString.length() > 0) {
+        display.print(state.localTimeString);
+    } else {
+        display.print("--:--:--");
+    }
 }
