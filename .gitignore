@@ -16,3 +16,6 @@ Thumbs.db
 # 日志文件
 *.log
 
+# 后端
+.env
+__pycache__/
