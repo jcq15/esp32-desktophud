@@ -5,24 +5,24 @@ Rect getRegionRect(Region region) {
     // 根据实际需求调整各区域位置和大小
     switch (region) {
         case Region::TIME:
-            // 时间区域：右上角
-            return Rect(600, 0, 200, 80);
+            // 时间区域
+            return Rect(0, 120, 500, 180);
             
         case Region::CALENDAR:
-            // 日历区域：左上角
-            return Rect(0, 0, 300, 120);
+            // 日历区域
+            return Rect(0, 0, 500, 120);
             
         case Region::WEATHER:
-            // 天气区域：左上角下方
-            return Rect(0, 120, 300, 150);
+            // 天气区域
+            return Rect(500, 0, 300, 120);
             
         case Region::NOTE:
-            // 笔记区域：中间
-            return Rect(300, 0, 300, 300);
+            // 笔记区域
+            return Rect(0, 300, 500, 180);
             
         case Region::STATUS:
-            // 状态区域：底部
-            return Rect(0, 420, 800, 60);
+            // 状态区域
+            return Rect(500, 420, 300, 60);
             
         default:
             return Rect(0, 0, 0, 0);

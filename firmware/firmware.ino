@@ -137,6 +137,21 @@ void setup() {
 }
 
 void loop() {
+    // 检查串口调试命令
+    if (Serial.available() > 0) {
+        String command = Serial.readStringUntil('\n');
+        command.trim();  // 去除首尾空白字符
+        
+        if (command == "refresh" || command == "r" || command == "R") {
+            Serial.println("[Debug] Full refresh command received");
+            scheduler.forceFullRefresh();
+        } else if (command.length() > 0) {
+            Serial.print("[Debug] Unknown command: ");
+            Serial.println(command);
+            Serial.println("[Debug] Available commands: refresh, r, R");
+        }
+    }
+    
     // 检查WiFi连接状态
     if (!wifi_is_connected()) {
         scheduler.updateWifiStatus(false);

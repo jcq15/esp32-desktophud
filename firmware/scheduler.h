@@ -32,7 +32,7 @@ private:
     // 维护刷新计数
     unsigned long partialRefreshCount = 0;
     unsigned long lastMaintenanceRefresh = 0;
-    static const unsigned long MAINTENANCE_INTERVAL = 21600000;  // 6小时
+    static const unsigned long MAINTENANCE_INTERVAL = 3600000;  // 1小时
     static const unsigned long PARTIAL_REFRESH_BEFORE_MAINTENANCE = 1000;  // 每1000次局刷后全刷
     
     // 收集dirty区域
@@ -70,5 +70,8 @@ public:
     
     // 获取widgets数量
     int getWidgetCount() const { return WIDGET_COUNT; }
+    
+    // 调试：手动触发全屏刷新
+    void forceFullRefresh();
 };
 

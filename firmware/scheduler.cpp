@@ -4,6 +4,11 @@
 #include "display_hal.h"
 #include <HTTPClient.h>
 #include <time.h>
+#include <GxEPD2_BW.h>
+#include <epd/GxEPD2_750_T7.h>
+
+// 声明全局display对象
+extern GxEPD2_BW<GxEPD2_750_T7, GxEPD2_750_T7::HEIGHT> display;
 
 // 全局DataHub实例（供Widget使用）
 DataHub dataHub;
@@ -298,6 +303,24 @@ void Scheduler::collectDirtyRegions() {
     }
 }
 
+void Scheduler::forceFullRefresh() {
+    Serial.println("[Scheduler] Force full refresh triggered");
+    // 全屏刷新，全屏先清白，避免残影
+    display_full_refresh([]() {
+        // 先清空整个屏幕为白色（使用文件顶部已声明的全局display对象）
+        display.fillScreen(GxEPD_WHITE);
+        
+        if (g_scheduler) {
+            // 渲染所有Widget
+            Widget** widgets = g_scheduler->getWidgets();
+            int count = g_scheduler->getWidgetCount();
+            for (int i = 0; i < count; i++) {
+                widgets[i]->render(widgets[i]->rect);
+            }
+        }
+    });
+}
+
 void Scheduler::performRefresh() {
     // 检查是否需要维护刷新（全屏刷新去残影）
     bool needMaintenance = false;
@@ -312,17 +335,8 @@ void Scheduler::performRefresh() {
     }
     
     if (needMaintenance) {
-        // 全屏刷新
-        display_full_refresh([]() {
-            if (g_scheduler) {
-                // 渲染所有Widget
-                Widget** widgets = g_scheduler->getWidgets();
-                int count = g_scheduler->getWidgetCount();
-                for (int i = 0; i < count; i++) {
-                    widgets[i]->render(widgets[i]->rect);
-                }
-            }
-        });
+        // 使用forceFullRefresh方法执行全屏刷新
+        forceFullRefresh();
         return;
     }
     
