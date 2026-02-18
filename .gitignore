@@ -19,3 +19,4 @@ Thumbs.db
 # 后端
 .env
 __pycache__/
+backend/test_images/

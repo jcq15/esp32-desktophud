@@ -67,10 +67,20 @@ def get_sample_data():
     """返回示例测试数据"""
     now = datetime.now()
     
+    sentences = [
+        "今天是个好日子",
+        "保持专注，持续进步",
+        "每一天都是新的开始",
+        "努力成为更好的自己",
+        "时间是最好的老师"
+    ]
+    
     return {
+        "sentence_ver": random.randint(100, 999),
         "wx_ver": random.randint(100, 999),
         "cal_ver": random.randint(100, 999),
         "note_ver": random.randint(100, 999),
+        "sentence": random.choice(sentences),
         "wx": {
             "city": "北京",
             "t": random.randint(10, 30),
@@ -93,18 +103,35 @@ def get_sample_data():
 
 
 def load_chinese_font(size: int, bold: bool = False):
-    """加载思源宋体字体"""
-    font_path = os.path.join(os.path.dirname(__file__), "fonts", "SourceHanSerifSC-VF.ttf")
+    """加载思源黑体字体
+    
+    Args:
+        size: 字体大小
+        bold: 是否加粗（通过stroke参数实现，不依赖字体文件）
+    
+    Returns:
+        (font, stroke_width): 字体对象和描边宽度（用于加粗效果）
+    """
+    # font_path = os.path.join(os.path.dirname(__file__), "fonts", "SourceHanSerifSC-VF.ttf")
+    font_path = os.path.join(os.path.dirname(__file__), "fonts", "SourceHanSansSC-VF.ttf")
     
     if os.path.exists(font_path):
         try:
-            return ImageFont.truetype(font_path, size)
+            font = ImageFont.truetype(font_path, size)
+            # 使用stroke参数实现加粗效果，stroke_width根据字体大小调整
+            # stroke_width = int(size * 0.08) if bold else 0
+            stroke_width = 1 if bold else 0
+            return font, stroke_width
         except Exception as e:
             print(f"警告: 加载字体失败 {e}，使用默认字体")
-            return ImageFont.load_default()
+            font = ImageFont.load_default()
+            stroke_width = 1 if bold else 0
+            return font, stroke_width
     else:
         print(f"警告: 字体文件不存在 {font_path}，使用默认字体")
-        return ImageFont.load_default()
+        font = ImageFont.load_default()
+        stroke_width = 1 if bold else 0
+        return font, stroke_width
 
 
 def image_to_1bit_bitmap(img: Image.Image, invert: bool = False) -> bytes:
@@ -132,27 +159,53 @@ def image_to_1bit_bitmap(img: Image.Image, invert: bool = False) -> bytes:
     return img.tobytes()
 
 
+def render_sentence_bitmap(sentence: str, width: int = 800, height: int = 56) -> bytes:
+    """渲染句子为原始1-bit位图数据（用于ESP32 drawBitmap）
+    黑底白字，需要反转颜色
+    """
+    # 创建1-bit位图，初始为黑色
+    img = Image.new('1', (width, height), 0)
+    draw = ImageDraw.Draw(img)
+    
+    font, stroke_width = load_chinese_font(28, bold=True)
+    
+    # 计算文字居中位置
+    bbox = draw.textbbox((0, 0), sentence, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    x = (width - text_width) // 2
+    y = (height - text_height) // 2 - bbox[1]
+    
+    # 绘制白色文字（在黑色背景上），使用stroke实现加粗
+    draw.text((x, y), sentence, font=font, fill=1, stroke_width=stroke_width, stroke_fill=1)
+
+    # 存一下
+    img.save("test_images/sentence.png")
+    
+    return image_to_1bit_bitmap(img)
+
+
 def render_cal_bitmap(cal_data: dict, width: int = 496, height: int = 120) -> bytes:
     """渲染日历信息为原始1-bit位图数据（用于ESP32 drawBitmap）"""
     img = Image.new('1', (width, height), 1)
     draw = ImageDraw.Draw(img)
     
     # 使用中文字体（适配496x120尺寸）
-    font_large = load_chinese_font(32, bold=True)
-    font_medium = load_chinese_font(24)
-    font_small = load_chinese_font(20)
+    font_large, stroke_large = load_chinese_font(32, bold=True)
+    font_medium, stroke_medium = load_chinese_font(24)
+    font_small, stroke_small = load_chinese_font(20)
     
     y = 10
-    draw.text((10, y), cal_data.get("date", ""), font=font_large, fill=0)
+    draw.text((10, y), cal_data.get("date", ""), font=font_large, fill=0, stroke_width=stroke_large, stroke_fill=0)
     y += 40
-    draw.text((10, y), cal_data.get("weekday", ""), font=font_medium, fill=0)
+    draw.text((10, y), cal_data.get("weekday", ""), font=font_medium, fill=0, stroke_width=stroke_medium, stroke_fill=0)
     y += 30
     lunar = cal_data.get("lunar", "")
     extra = cal_data.get("extra", "")
     if lunar:
-        draw.text((10, y), lunar, font=font_small, fill=0)
+        draw.text((10, y), lunar, font=font_small, fill=0, stroke_width=stroke_small, stroke_fill=0)
     if extra:
-        draw.text((250, y), extra, font=font_small, fill=0)
+        draw.text((250, y), extra, font=font_small, fill=0, stroke_width=stroke_small, stroke_fill=0)
     
     # 返回原始位图数据（1-bit位图的字节数组）
     # 注意：PIL的'1'模式中，0=黑色，1=白色
@@ -165,35 +218,35 @@ def render_wx_bitmap(wx_data: dict, width: int = 304, height: int = 176) -> byte
     img = Image.new('1', (width, height), 1)
     draw = ImageDraw.Draw(img)
     
-    font_large = load_chinese_font(36, bold=True)
-    font_medium = load_chinese_font(24, bold=True)
-    font_small = load_chinese_font(18)
+    font_large, stroke_large = load_chinese_font(36, bold=True)
+    font_medium, stroke_medium = load_chinese_font(24, bold=True)
+    font_small, stroke_small = load_chinese_font(18)
     
     y = 10
-    draw.text((10, y), wx_data.get("city", ""), font=font_medium, fill=0)
+    draw.text((10, y), wx_data.get("city", ""), font=font_medium, fill=0, stroke_width=stroke_medium, stroke_fill=0)
     y += 35
     temp = f"{wx_data.get('t', 0)}°C"
-    draw.text((10, y), temp, font=font_large, fill=0)
+    draw.text((10, y), temp, font=font_large, fill=0, stroke_width=stroke_large, stroke_fill=0)
     y += 40
-    draw.text((10, y), wx_data.get("text", ""), font=font_small, fill=0)
-    draw.text((10, y + 25), f"AQI: {wx_data.get('aqi', '')}", font=font_small, fill=0)
+    draw.text((10, y), wx_data.get("text", ""), font=font_small, fill=0, stroke_width=stroke_small, stroke_fill=0)
+    draw.text((10, y + 25), f"AQI: {wx_data.get('aqi', '')}", font=font_small, fill=0, stroke_width=stroke_small, stroke_fill=0)
     
     # 返回原始位图数据（1-bit位图的字节数组）
     return image_to_1bit_bitmap(img, invert=False)
 
 
-def render_note_bitmap(note_list: list, width: int = 496, height: int = 184) -> bytes:
+def render_note_bitmap(note_list: list, width: int = 496, height: int = 128) -> bytes:
     """渲染笔记列表为原始1-bit位图数据（用于ESP32 drawBitmap）"""
     img = Image.new('1', (width, height), 1)
     draw = ImageDraw.Draw(img)
     
-    font = load_chinese_font(24)
+    font, stroke_width = load_chinese_font(24)
     
     y = 10
-    for i, note in enumerate(note_list[:7]):  # 最多显示7条（适配184高度）
-        draw.text((10, y), f"{i+1}. {note}", font=font, fill=0)
-        y += 26
-        if y > height - 26:
+    for i, note in enumerate(note_list[:5]):  # 最多显示5条（适配128高度）
+        draw.text((10, y), f"{i+1}. {note}", font=font, fill=0, stroke_width=stroke_width, stroke_fill=0)
+        y += 24
+        if y > height - 24:
             break
     
     # 返回原始位图数据（1-bit位图的字节数组）
@@ -214,14 +267,22 @@ async def get_info():
     data = get_sample_data()
     
     # 返回原始位图数据（用于ESP32 drawBitmap）
+    sentence_bitmap = render_sentence_bitmap(data["sentence"])
     cal_bitmap = render_cal_bitmap(data["cal"])
     wx_bitmap = render_wx_bitmap(data["wx"])
     note_bitmap = render_note_bitmap(data["note"])
     
     return {
+        "sentence_ver": data["sentence_ver"],
         "wx_ver": data["wx_ver"],
         "cal_ver": data["cal_ver"],
         "note_ver": data["note_ver"],
+        "sentence": {
+            "buffer": base64.b64encode(sentence_bitmap).decode('utf-8'),
+            "width": 800,
+            "height": 56,
+            "format": "bitmap"
+        },
         "wx": {
             "buffer": base64.b64encode(wx_bitmap).decode('utf-8'),
             "width": 304,
@@ -237,7 +298,7 @@ async def get_info():
         "note": {
             "buffer": base64.b64encode(note_bitmap).decode('utf-8'),
             "width": 496,
-            "height": 184,
+            "height": 128,
             "format": "bitmap"
         }
     }
