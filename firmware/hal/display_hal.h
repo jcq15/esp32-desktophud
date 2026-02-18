@@ -12,3 +12,10 @@ void display_partial_refresh(void (*drawFn)());
 
 // 局部刷新指定区域：传入绘制回调和区域坐标
 void display_partial_refresh_area(void (*drawFn)(), int x, int y, int w, int h);
+
+// 绘制所有区域的边框（固定，不刷新）
+void display_draw_region_borders();
+
+// 在绘制回调中绘制边框（用于全屏刷新时）
+void display_draw_borders_in_callback();
+

@@ -199,4 +199,3 @@ bool drawBitmapFromBase64(const String& base64Data,
     return true;
 }
 
-

@@ -2,7 +2,7 @@
 #include <ArduinoJson.h>
 
 bool DataHub::updateFromJson(const String& json) {
-    DynamicJsonDocument doc(4096);
+    DynamicJsonDocument doc(512 * 1024); // 有8MB的PSRAM，这里开 512KB。返回的json会几十KB。
     DeserializationError error = deserializeJson(doc, json);
     
     if (error) {
@@ -16,6 +16,13 @@ bool DataHub::updateFromJson(const String& json) {
     bool updated = false;
     
     // 更新版本号
+    if (doc.containsKey("sentence_ver")) {
+        uint32_t new_ver = doc["sentence_ver"].as<uint32_t>();
+        if (new_ver != versions.sentence_ver) {
+            versions.sentence_ver = new_ver;
+            updated = true;
+        }
+    }
     if (doc.containsKey("wx_ver")) {
         uint32_t new_ver = doc["wx_ver"].as<uint32_t>();
         if (new_ver != versions.wx_ver) {
@@ -36,6 +43,25 @@ bool DataHub::updateFromJson(const String& json) {
             versions.note_ver = new_ver;
             updated = true;
         }
+    }
+    
+    // 更新句子数据（位图格式）
+    if (doc.containsKey("sentence")) {
+        JsonObject sentenceObj = doc["sentence"];
+        if (sentenceObj.containsKey("buffer")) {
+            // 检查format字段，如果存在且为bitmap，或者不存在format字段（兼容旧格式）
+            bool isBitmap = !sentenceObj.containsKey("format") || sentenceObj["format"].as<String>() == "bitmap";
+            if (isBitmap) {
+                String newBuffer = sentenceObj["buffer"].as<String>();
+                if (newBuffer != sentence.bitmapBuffer) {
+                    sentence.bitmapBuffer = newBuffer;
+                    Serial.print("[DataHub] Sentence bitmap updated, length: ");
+                    Serial.println(newBuffer.length());
+                    updated = true;
+                }
+            }
+        }
+        sentence.version = versions.sentence_ver;
     }
     
     // 更新天气数据（位图格式）

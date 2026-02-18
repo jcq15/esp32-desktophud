@@ -3,6 +3,7 @@
 
 // 数据版本号
 struct DataVersions {
+    uint32_t sentence_ver = 0;  // 句子版本
     uint32_t wx_ver = 0;    // 天气版本
     uint32_t cal_ver = 0;   // 日历版本
     uint32_t note_ver = 0;  // 笔记版本
@@ -27,10 +28,17 @@ struct NoteData {
     uint32_t version = 0;
 };
 
+// 句子数据
+struct SentenceData {
+    String bitmapBuffer = "";  // base64编码的位图数据
+    uint32_t version = 0;
+};
+
 // 数据中心：统一管理所有数据
 class DataHub {
 public:
     DataVersions versions;
+    SentenceData sentence;
     WeatherData weather;
     CalendarData calendar;
     NoteData notes;

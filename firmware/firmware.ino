@@ -1,9 +1,30 @@
 #include <Arduino.h>
-#include "display_hal.h"
-#include "scheduler.h"
-#include "wifi_config.h"
+#include "hal/display_hal.h"
+#include "core/scheduler.h"
+#include "hal/wifi_config.h"
 #include "config/config.h"
 #include <time.h>
+
+// Arduino IDE 有时不会自动编译子目录中的 .cpp 文件
+// 这里显式包含以确保它们被编译（使用条件编译避免重复定义）
+#ifndef ARDUINO_CPP_INCLUDED
+#define ARDUINO_CPP_INCLUDED
+#include "hal/display_hal.cpp"
+#include "hal/wifi_config.cpp"
+#include "core/data_hub.cpp"
+#include "core/region.cpp"
+#include "core/scheduler.cpp"
+#include "ui/bitmap_utils.cpp"
+#include "ui/ui_pages.cpp"
+#include "widgets/widget_utils.cpp"
+#include "widgets/widget_sentence.cpp"
+#include "widgets/widget_time.cpp"
+#include "widgets/widget_calendar.cpp"
+#include "widgets/widget_weather.cpp"
+#include "widgets/widget_note.cpp"
+#include "widgets/widget_status.cpp"
+#include "widgets/widget_free.cpp"
+#endif
 
 static Scheduler scheduler;
 
@@ -36,13 +57,20 @@ void setup() {
     // 初始化显示
     display_begin();
 
-    // 初始全屏刷新
+    // 初始全屏刷新（清空屏幕）
     display_full_refresh([]() {
         // 空白屏幕
     });
     
+    // 绘制所有区域的边框（固定，不刷新）
+    display_draw_region_borders();
+    
     // 初始化调度器
     scheduler.begin();
+
+    // 调试信息
+    Serial.printf("Heap: %u\n", ESP.getFreeHeap());
+    Serial.printf("PSRAM: %u\n", ESP.getFreePsram());
     
     // 显示"正在初始化..."状态
     extern DataHub dataHub;
@@ -68,7 +96,8 @@ void setup() {
         []() {
             extern Scheduler scheduler;
             Widget** ws = scheduler.getWidgets();
-            ws[4]->render(ws[4]->rect);
+            int count = scheduler.getWidgetCount();
+            ws[count - 1]->render(ws[count - 1]->rect);
         },
         statusRect.x, statusRect.y, statusRect.w, statusRect.h
     );
@@ -119,6 +148,8 @@ void setup() {
             for (int i = 0; i < count; i++) {
                 widgets[i]->render(widgets[i]->rect);
             }
+            // 重新绘制边框（因为widget的fillRect会覆盖边框）
+            display_draw_borders_in_callback();
         });
     } else {
         scheduler.updateWifiStatus(false);

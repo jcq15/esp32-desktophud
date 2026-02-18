@@ -1,8 +1,8 @@
 #pragma once
 #include <Arduino.h>
 #include <time.h>
-#include "region.h"
-#include "data_hub.h"
+#include "../core/region.h"
+#include "../core/data_hub.h"
 
 // 渲染模式
 enum class RenderMode {

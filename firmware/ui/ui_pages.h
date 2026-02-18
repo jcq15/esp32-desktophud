@@ -14,3 +14,4 @@ extern GxEPD2_BW<GxEPD2_750_T7, GxEPD2_750_T7::HEIGHT> display;
 void drawCenteredText(const GFXfont* font, 
                       const String& text,
                       int x, int y, int w, int h);
+

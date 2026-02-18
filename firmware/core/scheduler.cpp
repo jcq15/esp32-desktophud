@@ -1,7 +1,7 @@
 #include "scheduler.h"
-#include "wifi_config.h"
-#include "config/config.h"
-#include "display_hal.h"
+#include "../hal/wifi_config.h"
+#include "../config/config.h"
+#include "../hal/display_hal.h"
 #include <HTTPClient.h>
 #include <time.h>
 #include <GxEPD2_BW.h>
@@ -149,11 +149,13 @@ bool ContentService::fetchIfNeeded(DataHub& hub, const String& apiUrl) {
 }
 
 Scheduler::Scheduler() {
-    widgets[0] = &timeWidget;
-    widgets[1] = &calendarWidget;
-    widgets[2] = &weatherWidget;
-    widgets[3] = &noteWidget;
-    widgets[4] = &statusWidget;
+    widgets[0] = &sentenceWidget;
+    widgets[1] = &timeWidget;
+    widgets[2] = &calendarWidget;
+    widgets[3] = &weatherWidget;
+    widgets[4] = &noteWidget;
+    widgets[5] = &statusWidget;
+    widgets[6] = &freeWidget;
     g_scheduler = this;
 }
 
@@ -173,11 +175,13 @@ void Scheduler::performInitialFetch() {
             ::dataHub = dataHub;
             
             // 强制同步所有Widget的数据（首次启动）
+            sentenceWidget.syncFromHub(dataHub);
             timeWidget.syncFromHub(dataHub);
             calendarWidget.syncFromHub(dataHub);
             weatherWidget.syncFromHub(dataHub);
             noteWidget.syncFromHub(dataHub);
             statusWidget.syncFromHub(dataHub);
+            freeWidget.syncFromHub(dataHub);
         }
     }
 }
@@ -274,6 +278,13 @@ void Scheduler::collectDirtyRegions() {
     }
     
     // 3. 检查各个Widget是否需要更新
+    // SentenceWidget（每5分钟）
+    if (sentenceWidget.shouldUpdate()) {
+        if (sentenceWidget.syncFromHub(dataHub)) {
+            sentenceWidget.isDirty = true;
+        }
+    }
+    
     // NoteWidget（每5分钟）
     if (noteWidget.shouldUpdate()) {
         if (noteWidget.syncFromHub(dataHub)) {
@@ -318,6 +329,9 @@ void Scheduler::forceFullRefresh() {
                 widgets[i]->render(widgets[i]->rect);
             }
         }
+        
+        // 重新绘制边框（因为fillScreen和widget的fillRect会覆盖边框）
+        display_draw_borders_in_callback();
     });
 }
 

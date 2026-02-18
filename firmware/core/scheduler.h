@@ -1,12 +1,14 @@
 #pragma once
 #include <Arduino.h>
-#include "widget.h"
+#include "../widgets/widget.h"
 #include "data_hub.h"
-#include "widget_time.h"
-#include "widget_calendar.h"
-#include "widget_weather.h"
-#include "widget_note.h"
-#include "widget_status.h"
+#include "../widgets/widget_sentence.h"
+#include "../widgets/widget_time.h"
+#include "../widgets/widget_calendar.h"
+#include "../widgets/widget_weather.h"
+#include "../widgets/widget_note.h"
+#include "../widgets/widget_status.h"
+#include "../widgets/widget_free.h"
 
 // 内容服务：负责从服务器获取数据
 class ContentService {
@@ -20,13 +22,15 @@ private:
     DataHub dataHub;
     
     // 所有Widget
+    SentenceWidget sentenceWidget;
     TimeWidget timeWidget;
     CalendarWidget calendarWidget;
     WeatherWidget weatherWidget;
     NoteWidget noteWidget;
     StatusWidget statusWidget;
+    FreeWidget freeWidget;
     
-    static const int WIDGET_COUNT = 5;
+    static const int WIDGET_COUNT = 7;
     Widget* widgets[WIDGET_COUNT];
     
     // 维护刷新计数

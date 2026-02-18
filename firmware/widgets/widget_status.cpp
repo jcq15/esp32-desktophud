@@ -2,6 +2,7 @@
 #include <Fonts/FreeMono9pt7b.h>
 #include <GxEPD2_BW.h>
 #include <epd/GxEPD2_750_T7.h>
+#include "widget_utils.h"
 
 extern GxEPD2_BW<GxEPD2_750_T7, GxEPD2_750_T7::HEIGHT> display;
 extern DataHub dataHub;
@@ -70,5 +71,8 @@ void StatusWidget::render(const Rect& area) {
         display.print("Error: ");
         display.print(dataHub.errorMessage);
     }
+    
+    // 绘制边框
+    draw_widget_border(area);
 }
 
