@@ -23,7 +23,7 @@ public:
     
     Widget(Region r) : region(r) {
         rect = getRegionRect(r);
-        rect.alignTo16();  // 对齐到16的倍数
+        // 不再对齐到16的倍数，使用原始尺寸
     }
     
     virtual ~Widget() {}

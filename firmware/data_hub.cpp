@@ -38,32 +38,65 @@ bool DataHub::updateFromJson(const String& json) {
         }
     }
     
-    // 更新天气数据
+    // 更新天气数据（位图格式）
     if (doc.containsKey("wx")) {
         JsonObject wx = doc["wx"];
-        if (wx.containsKey("city")) weather.city = wx["city"].as<String>();
-        if (wx.containsKey("t")) weather.temperature = String(wx["t"].as<int>());
-        if (wx.containsKey("text")) weather.text = wx["text"].as<String>();
-        if (wx.containsKey("aqi")) weather.aqi = wx["aqi"].as<String>();
+        if (wx.containsKey("buffer")) {
+            // 检查format字段，如果存在且为bitmap，或者不存在format字段（兼容旧格式）
+            bool isBitmap = !wx.containsKey("format") || wx["format"].as<String>() == "bitmap";
+            if (isBitmap) {
+                String newBuffer = wx["buffer"].as<String>();
+                if (newBuffer != weather.bitmapBuffer) {
+                    weather.bitmapBuffer = newBuffer;
+                    Serial.print("[DataHub] Weather bitmap updated, length: ");
+                    Serial.println(newBuffer.length());
+                    updated = true;
+                }
+            }
+        }
         weather.version = versions.wx_ver;
     }
     
-    // 更新日历数据
+    // 更新日历数据（位图格式）
     if (doc.containsKey("cal")) {
         JsonObject cal = doc["cal"];
-        if (cal.containsKey("date")) calendar.date = cal["date"].as<String>();
-        if (cal.containsKey("weekday")) calendar.weekday = cal["weekday"].as<String>();
-        if (cal.containsKey("lunar")) calendar.lunar = cal["lunar"].as<String>();
-        if (cal.containsKey("extra")) calendar.extra = cal["extra"].as<String>();
+        if (cal.containsKey("buffer")) {
+            // 检查format字段，如果存在且为bitmap，或者不存在format字段（兼容旧格式）
+            bool isBitmap = !cal.containsKey("format") || cal["format"].as<String>() == "bitmap";
+            if (isBitmap) {
+                String newBuffer = cal["buffer"].as<String>();
+                if (newBuffer != calendar.bitmapBuffer) {
+                    calendar.bitmapBuffer = newBuffer;
+                    Serial.print("[DataHub] Calendar bitmap updated, length: ");
+                    Serial.println(newBuffer.length());
+                    updated = true;
+                }
+            }
+        }
         calendar.version = versions.cal_ver;
     }
     
-    // 更新笔记数据
-    if (doc.containsKey("note") && doc["note"].is<JsonArray>()) {
-        JsonArray noteArray = doc["note"];
-        notes.count = min(noteArray.size(), (size_t)10);
-        for (int i = 0; i < notes.count; i++) {
-            notes.notes[i] = noteArray[i].as<String>();
+    // 更新笔记数据（位图格式）
+    if (doc.containsKey("note")) {
+        // 检查note是对象还是数组
+        if (doc["note"].is<JsonObject>()) {
+            JsonObject note = doc["note"];
+            if (note.containsKey("buffer")) {
+                // 检查format字段，如果存在且为bitmap，或者不存在format字段（兼容旧格式）
+                bool isBitmap = !note.containsKey("format") || note["format"].as<String>() == "bitmap";
+                if (isBitmap) {
+                    String newBuffer = note["buffer"].as<String>();
+                    if (newBuffer != notes.bitmapBuffer) {
+                        notes.bitmapBuffer = newBuffer;
+                        Serial.print("[DataHub] Note bitmap updated, length: ");
+                        Serial.println(newBuffer.length());
+                        updated = true;
+                    }
+                }
+            }
+        } else {
+            // 如果是数组格式（旧格式），忽略
+            Serial.println("[DataHub] Note is array format, skipping");
         }
         notes.version = versions.note_ver;
     }

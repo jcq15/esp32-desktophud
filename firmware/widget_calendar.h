@@ -3,8 +3,7 @@
 
 class CalendarWidget : public Widget {
 private:
-    String lastDateString = "";
-    String lastLunarString = "";
+    uint32_t lastVersion = 0;
     
 public:
     CalendarWidget() : Widget(Region::CALENDAR) {

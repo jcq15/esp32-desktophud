@@ -11,26 +11,19 @@ struct DataVersions {
 
 // 天气数据
 struct WeatherData {
-    String city = "";
-    String temperature = "";
-    String text = "";
-    String aqi = "";
+    String bitmapBuffer = "";  // base64编码的位图数据
     uint32_t version = 0;
 };
 
 // 日历数据
 struct CalendarData {
-    String date = "";
-    String weekday = "";
-    String lunar = "";
-    String extra = "";
+    String bitmapBuffer = "";  // base64编码的位图数据
     uint32_t version = 0;
 };
 
 // 笔记数据
 struct NoteData {
-    String notes[10];
-    int count = 0;
+    String bitmapBuffer = "";  // base64编码的位图数据
     uint32_t version = 0;
 };
 
