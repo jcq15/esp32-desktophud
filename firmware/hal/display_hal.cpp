@@ -10,6 +10,10 @@ GxEPD2_BW<GxEPD2_750_T7, GxEPD2_750_T7::HEIGHT> display(
 );
 
 void display_begin() {
+    // 初始化PWR引脚并设置为高电平
+    pinMode(PIN_EPD_PWR, OUTPUT);
+    digitalWrite(PIN_EPD_PWR, HIGH);
+    
     SPI.begin(PIN_SPI_SCK, -1, PIN_SPI_MOSI, PIN_EPD_CS);
     display.init(115200);
     display.setRotation(0);  // 横向显示（800x480）
