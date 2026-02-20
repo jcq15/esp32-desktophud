@@ -1,8 +1,7 @@
 #include "widget_time.h"
-#include <Fonts/FreeMonoBold24pt7b.h>
 #include <GxEPD2_BW.h>
 #include <epd/GxEPD2_750_T7.h>
-#include "../ui/ui_pages.h"
+#include "../ui/seven_segment.h"
 #include "widget_utils.h"
 
 extern GxEPD2_BW<GxEPD2_750_T7, GxEPD2_750_T7::HEIGHT> display;
@@ -23,7 +22,12 @@ bool TimeWidget::syncFromHub(const DataHub& hub) {
 
 void TimeWidget::render(const Rect& area) {
     display.fillRect(area.x, area.y, area.w, area.h, GxEPD_WHITE);
-    drawCenteredText(&FreeMonoBold24pt7b, lastMinuteString, area.x, area.y, area.w, area.h);
+    
+    // 使用七段数码管显示时间
+    if (lastMinuteString.length() >= 5) {
+        drawSevenSegmentTime(display, area.x, area.y, area.w, area.h, lastMinuteString);
+    }
+    
     draw_widget_border(area);
 }
 

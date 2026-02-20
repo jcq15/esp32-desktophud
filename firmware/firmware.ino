@@ -16,6 +16,7 @@
 #include "core/scheduler.cpp"
 #include "ui/bitmap_utils.cpp"
 #include "ui/ui_pages.cpp"
+#include "ui/seven_segment.cpp"
 #include "widgets/widget_utils.cpp"
 #include "widgets/widget_sentence.cpp"
 #include "widgets/widget_time.cpp"

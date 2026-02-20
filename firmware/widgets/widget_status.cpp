@@ -38,13 +38,23 @@ void StatusWidget::render(const Rect& area) {
     display.setFont(&FreeMono9pt7b);
     
     int x = area.x + 10;
-    int y = area.y + 30;
+    int y = area.y + 25;
     
     // 状态信息（启动时显示）
+    /*
     if (dataHub.statusMessage.length() > 0) {
         display.setCursor(x, y);
         display.print(dataHub.statusMessage);
         y += 25;
+    }
+    */
+
+    // 错误信息，如果有错误信息就不显示别的了
+    if (dataHub.errorMessage.length() > 0) {
+        display.setCursor(x, y);
+        display.print("Error: ");
+        display.print(dataHub.errorMessage);
+        return;
     }
     
     // WiFi状态
@@ -54,22 +64,13 @@ void StatusWidget::render(const Rect& area) {
     } else {
         display.print("WiFi: Disconnected");
     }
+    y += 25;
     
     // 最后同步时间
     if (dataHub.lastSyncTime.length() > 0) {
-        x += 150;
         display.setCursor(x, y);
         display.print("Sync: ");
         display.print(dataHub.lastSyncTime);
-    }
-    
-    // 错误信息
-    if (dataHub.errorMessage.length() > 0) {
-        x = area.x + 10;
-        y += 25;
-        display.setCursor(x, y);
-        display.print("Error: ");
-        display.print(dataHub.errorMessage);
     }
     
     // 绘制边框
