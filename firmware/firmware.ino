@@ -57,14 +57,6 @@ void setup() {
 
     // 初始化显示
     display_begin();
-
-    // 初始全屏刷新（清空屏幕）
-    display_full_refresh([]() {
-        // 空白屏幕
-    });
-    
-    // 绘制所有区域的边框（固定，不刷新）
-    display_draw_region_borders();
     
     // 初始化调度器
     scheduler.begin();
@@ -103,7 +95,7 @@ void setup() {
         statusRect.x, statusRect.y, statusRect.w, statusRect.h
     );
     
-    if (wifi_connect()) {
+    if (wifi_connect(&scheduler)) {
         scheduler.updateWifiStatus(true);
         
         // 初始化NTP时间同步
@@ -189,7 +181,7 @@ void loop() {
         scheduler.updateWifiStatus(false);
         
         // 尝试重连
-        if (wifi_connect()) {
+        if (wifi_connect(&scheduler)) {
             scheduler.updateWifiStatus(true);
             initNTP();  // 重新同步时间
         }

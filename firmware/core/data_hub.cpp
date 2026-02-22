@@ -44,6 +44,13 @@ bool DataHub::updateFromJson(const String& json) {
             updated = true;
         }
     }
+    if (doc.containsKey("forecast_ver")) {
+        uint32_t new_ver = doc["forecast_ver"].as<uint32_t>();
+        if (new_ver != versions.forecast_ver) {
+            versions.forecast_ver = new_ver;
+            updated = true;
+        }
+    }
     
     // 更新句子数据（位图格式）
     if (doc.containsKey("sentence")) {
@@ -125,6 +132,25 @@ bool DataHub::updateFromJson(const String& json) {
             Serial.println("[DataHub] Note is array format, skipping");
         }
         notes.version = versions.note_ver;
+    }
+    
+    // 更新天气预报数据（位图格式）
+    if (doc.containsKey("forecast")) {
+        JsonObject forecastObj = doc["forecast"];
+        if (forecastObj.containsKey("buffer")) {
+            // 检查format字段，如果存在且为bitmap，或者不存在format字段（兼容旧格式）
+            bool isBitmap = !forecastObj.containsKey("format") || forecastObj["format"].as<String>() == "bitmap";
+            if (isBitmap) {
+                String newBuffer = forecastObj["buffer"].as<String>();
+                if (newBuffer != forecast.bitmapBuffer) {
+                    forecast.bitmapBuffer = newBuffer;
+                    Serial.print("[DataHub] Forecast bitmap updated, length: ");
+                    Serial.println(newBuffer.length());
+                    updated = true;
+                }
+            }
+        }
+        forecast.version = versions.forecast_ver;
     }
     
     // 更新获取间隔（分钟）

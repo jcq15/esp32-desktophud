@@ -7,6 +7,7 @@ struct DataVersions {
     uint32_t wx_ver = 0;    // 天气版本
     uint32_t cal_ver = 0;   // 日历版本
     uint32_t note_ver = 0;  // 笔记版本
+    uint32_t forecast_ver = 0;  // 天气预报版本
     uint32_t global_ver = 0; // 全局版本（可选）
 };
 
@@ -34,6 +35,12 @@ struct SentenceData {
     uint32_t version = 0;
 };
 
+// 天气预报数据（未来3天）
+struct ForecastData {
+    String bitmapBuffer = "";  // base64编码的位图数据
+    uint32_t version = 0;
+};
+
 // 数据中心：统一管理所有数据
 class DataHub {
 public:
@@ -42,6 +49,7 @@ public:
     WeatherData weather;
     CalendarData calendar;
     NoteData notes;
+    ForecastData forecast;
     
     // 本地数据
     String localTimeString = "";

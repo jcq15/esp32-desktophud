@@ -9,10 +9,31 @@
 // ============================================
 
 // ============================================
-// WiFi 配置
+// WiFi 配置 - 支持多个WiFi，按顺序尝试连接
 // ============================================
-#define WIFI_SSID "your_wifi_ssid"
-#define WIFI_PASSWORD "your_wifi_password"
+// 格式：{SSID, PASSWORD}
+// 可以添加多个WiFi配置，系统会从前往后依次尝试连接
+struct WiFiConfig {
+    const char* ssid;
+    const char* password;
+};
+
+static const WiFiConfig WIFI_CONFIGS[] = {
+    {"your_wifi_ssid_1", "your_wifi_password_1"},
+    // 可以在这里添加更多WiFi配置，例如：
+    // {"your_wifi_ssid_2", "your_wifi_password_2"},
+    // {"your_wifi_ssid_3", "your_wifi_password_3"},
+};
+
+static const int WIFI_CONFIG_COUNT = sizeof(WIFI_CONFIGS) / sizeof(WIFI_CONFIGS[0]);
+
+// ============================================
+// WiFiManager配置（当所有WiFi配置都失败时，开启配置门户）
+// ============================================
+#define ENABLE_WIFI_MANAGER_PORTAL 1       // 是否启用WiFiManager配置门户（1=启用，0=禁用）
+#define WIFI_MANAGER_AP_NAME "EINK-SETUP"  // 配置热点的名称
+#define WIFI_MANAGER_AP_PASSWORD ""        // 配置热点的密码（空字符串表示无密码）
+#define WIFI_MANAGER_TIMEOUT_SEC 180       // 配置门户超时时间（秒），超时后重启
 
 // ============================================
 // API 服务器配置

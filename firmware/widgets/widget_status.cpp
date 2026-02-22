@@ -40,14 +40,12 @@ void StatusWidget::render(const Rect& area) {
     int x = area.x + 10;
     int y = area.y + 25;
     
-    // 状态信息（启动时显示）
-    /*
+    // 状态信息（启动时显示，如WiFi连接状态）
     if (dataHub.statusMessage.length() > 0) {
         display.setCursor(x, y);
         display.print(dataHub.statusMessage);
         y += 25;
     }
-    */
 
     // 错误信息，如果有错误信息就不显示别的了
     if (dataHub.errorMessage.length() > 0) {
