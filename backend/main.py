@@ -1,10 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, date
+from calendar import monthrange
 import httpx
 import os
 import random
 import logging
+import asyncio
 from typing import Optional
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -12,6 +14,11 @@ import base64
 import holidays
 from zhdate import ZhDate
 import io
+from astral import LocationInfo
+from astral.sun import sun
+from astral.moon import phase as moon_phase_func
+import math
+from zoneinfo import ZoneInfo
 try:
     from lunar_python import Lunar
     HAS_LUNAR_PYTHON = True
@@ -66,6 +73,10 @@ app.add_middleware(
 
 # 默认位置（北京顺义区）
 DEFAULT_LOCATION = "101010400"
+# 默认经纬度（北京顺义区，用于计算日出日落）
+DEFAULT_LATITUDE = 40.1289  # 纬度
+DEFAULT_LONGITUDE = 116.6544  # 经度
+DEFAULT_TIMEZONE = "Asia/Shanghai"
 
 
 def get_real_date_info():
@@ -81,14 +92,14 @@ def get_real_date_info():
     weekday = weekdays[today.weekday()]
     
     # 3. 农历月日和节气
-    lunar_str = "农历 未知"
+    lunar_str = "零月初零"
     solar_term = ""  # 节气
     try:
         if HAS_LUNAR_PYTHON:
             # 使用 lunar_python 库
             lunar = Lunar.fromDate(now)
             # 使用 toString() 然后 split('年')[-1] 获取月日
-            lunar_str = f"农历 {lunar.toString().split('年')[-1]}"
+            lunar_str = f"{lunar.toString().split('年')[-1]}"
             # 获取节气
             jie_qi = lunar.getJieQi()
             if jie_qi:
@@ -185,14 +196,15 @@ async def get_sample_data():
     # 获取真实的日期信息
     cal_info = get_real_date_info()
     
-    # 获取真实的天气信息
+    # 并发获取天气信息和一言句子
     weather_service = get_weather_service()
-    weather_data = await weather_service.get_weather_now(DEFAULT_LOCATION)
-    air_quality_data = await weather_service.get_air_quality(DEFAULT_LOCATION)
-    forecast_data = await weather_service.get_weather_forecast(DEFAULT_LOCATION, "3d")
-    
-    # 获取一言句子
-    sentence = await get_hitokoto_sentence()
+    weather_data, air_quality_data, forecast_data, sentence = await asyncio.gather(
+        weather_service.get_weather_now(DEFAULT_LOCATION),
+        weather_service.get_air_quality(DEFAULT_LOCATION),
+        weather_service.get_weather_forecast(DEFAULT_LOCATION, "3d"),
+        get_hitokoto_sentence(),
+        return_exceptions=False
+    )
     
     # 构建天气信息
     wx_info = {
@@ -245,6 +257,34 @@ async def get_sample_data():
                 "tempMin": day_data.get("tempMin", ""),  # 最低温度
             })
     
+    # 计算年/月/日进度
+    today = now.date()
+    year = today.year
+    month = today.month
+    day = today.day
+    
+    # 年进度：今年过了多少天 / 今年总天数
+    year_start = date(year, 1, 1)
+    year_end = date(year, 12, 31)
+    year_total_days = (year_end - year_start).days + 1
+    year_passed_days = (today - year_start).days + 1
+    year_progress = (year_passed_days / year_total_days) * 100
+    
+    # 月进度：本月过了多少天 / 本月总天数
+    month_total_days = monthrange(year, month)[1]
+    month_progress = (day / month_total_days) * 100
+    
+    # 日进度：今天过了多少小时 / 24小时
+    hour = now.hour
+    minute = now.minute
+    day_progress = ((hour * 60 + minute) / (24 * 60)) * 100
+    
+    progress_data = {
+        "year": round(year_progress, 1),
+        "month": round(month_progress, 1),
+        "day": round(day_progress, 1),
+    }
+    
     # 使用时间戳（秒级）模 10000 作为版本号
     timestamp = int(now.timestamp()) % 86389 # magic
     
@@ -258,11 +298,7 @@ async def get_sample_data():
         "wx": wx_info,
         "cal": cal_info,
         "forecast": forecast_list,
-        "note": [
-            "喝水",
-            "设计外壳",
-            f'我想吃 {random.choice(["苹果", "香蕉", "橙子", "梨", "菠萝"])}'
-        ],
+        "progress": progress_data,
         #"ttl": 300
     }
 
@@ -424,54 +460,253 @@ def render_sentence_bitmap(sentence: str, width: int = 800, height: int = 56) ->
     return image_to_1bit_bitmap(img)
 
 
+def get_moon_phase_name(phase_days: float) -> str:
+    """根据月相天数获取中文名称
+    
+    Args:
+        phase_days: 距新月天数（0~29.53）
+    
+    Returns:
+        月相中文名称
+    """
+    _PHASE_BOUNDS = [
+        (1.0, "新月"),
+        (6.382, "娥眉月"),  # Waxing Crescent
+        (8.382, "上弦月"),
+        (13.765, "盈凸月"),  # Waxing Gibbous
+        (15.765, "满月"),
+        (21.148, "亏凸月"),  # Waning Gibbous
+        (23.148, "下弦月"),
+        (28.53, "残月"),  # Waning Crescent
+    ]
+    
+    for bound, name in _PHASE_BOUNDS:
+        if phase_days < bound:
+            return name
+    
+    # 兜底当作新月
+    return "新月"
+
+
+def draw_sun_icon(draw: ImageDraw.Draw, x: int, y: int, size: int, is_sunrise: bool = True):
+    """绘制太阳图标（带箭头）
+    
+    Args:
+        draw: ImageDraw对象
+        x, y: 图标左上角坐标
+        size: 图标大小
+        is_sunrise: True为日出（向上箭头），False为日落（向下箭头）
+    """
+    # 绘制圆形太阳
+    center_x = x + size // 2
+    center_y = y + size // 2
+    radius = size // 3
+    
+    # 太阳外圆
+    draw.ellipse(
+        [center_x - radius, center_y - radius, center_x + radius, center_y + radius],
+        outline=0,
+        width=2,
+        fill=1
+    )
+    
+    # 绘制箭头
+    arrow_size = size // 4
+    if is_sunrise:
+        # 向上箭头
+        arrow_y = y + size - arrow_size - 2
+        # 箭头三角形（向上）
+        arrow_points = [
+            (center_x, arrow_y),
+            (center_x - arrow_size // 2, arrow_y + arrow_size),
+            (center_x + arrow_size // 2, arrow_y + arrow_size),
+        ]
+    else:
+        # 向下箭头
+        arrow_y = y + 2
+        # 箭头三角形（向下）
+        arrow_points = [
+            (center_x, arrow_y + arrow_size),
+            (center_x - arrow_size // 2, arrow_y),
+            (center_x + arrow_size // 2, arrow_y),
+        ]
+    
+    draw.polygon(arrow_points, outline=0, fill=0)
+
+
+def draw_moon_phase(img: Image.Image, center_x: int, center_y: int, radius: int, phase: float):
+    """绘制月相图
+    Args:
+        img: PIL Image对象
+        center_x, center_y: 圆心坐标
+        radius: 半径
+        phase: 月相值（0.0-1.0，0.0=新月/全黑，0.25=上弦月/右半黑，0.5=满月/全白，0.75=下弦月/左半黑）
+    """
+    draw = ImageDraw.Draw(img)
+    
+    # 先绘制白色圆（带黑色边框）
+    bbox = [center_x - radius, center_y - radius, center_x + radius, center_y + radius]
+    draw.ellipse(bbox, outline=0, width=2, fill=1)
+    
+    # 根据月相值计算需要涂黑的部分
+    # 月相原理：在圆内绘制一个椭圆形状的黑色区域
+    if phase < 0.5:
+        # 从新月(0.0)到满月(0.5)：左侧是黑色，右侧是白色
+        # 计算黑色椭圆的宽度（从2*radius逐渐减小到0）
+        black_width = 2 * radius * (1 - 2 * phase)
+        
+        if black_width > 0:
+            # 逐行绘制黑色椭圆区域
+            for y in range(center_y - radius, center_y + radius + 1):
+                dy = y - center_y
+                if abs(dy) < radius:
+                    # 计算圆的x范围
+                    circle_x_offset = int(math.sqrt(radius * radius - dy * dy))
+                    
+                    # 计算黑色椭圆的x范围
+                    # 椭圆在y处的宽度 = black_width * sqrt(1 - (y/radius)^2)
+                    # 简化：使用线性插值
+                    ellipse_x_offset = int(circle_x_offset * (black_width / (2 * radius)))
+                    
+                    # 绘制左侧黑色部分
+                    x_start = center_x - circle_x_offset
+                    x_end = center_x - circle_x_offset + ellipse_x_offset
+                    if x_start < x_end:
+                        draw.line([(x_start, y), (x_end, y)], fill=0, width=1)
+    else:
+        # 从满月(0.5)到新月(1.0)：右侧是黑色，左侧是白色
+        # 计算黑色椭圆的宽度（从0逐渐增大到2*radius）
+        black_width = 2 * radius * (2 * phase - 1)
+        
+        if black_width > 0:
+            # 逐行绘制黑色椭圆区域
+            for y in range(center_y - radius, center_y + radius + 1):
+                dy = y - center_y
+                if abs(dy) < radius:
+                    circle_x_offset = int(math.sqrt(radius * radius - dy * dy))
+                    ellipse_x_offset = int(circle_x_offset * (black_width / (2 * radius)))
+                    
+                    # 绘制右侧黑色部分
+                    x_start = center_x + circle_x_offset - ellipse_x_offset
+                    x_end = center_x + circle_x_offset
+                    if x_start < x_end:
+                        draw.line([(x_start, y), (x_end, y)], fill=0, width=1)
+
+
 def render_cal_bitmap(cal_data: dict, width: int = 496, height: int = 120) -> bytes:
-    """渲染日历信息为原始1-bit位图数据（用于ESP32 drawBitmap）"""
+    """渲染日历信息为原始1-bit位图数据（用于ESP32 drawBitmap）
+    
+    新布局：三块区域
+    - 左侧：日期、星期、农历、节假日/节气
+    - 中间：日出日落时间（带图标）
+    - 右侧：月相图（带名称）
+    - 添加竖线分区（细线，不顶格）
+    """
     img = Image.new('1', (width, height), 1)
     draw = ImageDraw.Draw(img)
     
     # 使用中文字体（适配496x120尺寸）
     font_large, stroke_large = load_chinese_font(32, bold=True)
-    font_medium, stroke_medium = load_chinese_font(24)
+    font_medium, stroke_medium = load_chinese_font(24, bold=True)
     font_small, stroke_small = load_chinese_font(20)
+    font_sun, stroke_sun = load_chinese_font(24)
     
-    # 第一行：日期（左侧）+ 星期（右侧）
+    # 边距（用于竖线不顶格）
+    margin_y = 8
+    
+    # 三块区域的宽度分配
+    left_width = int(width * 0.45)      # 左侧：45%
+    middle_width = int(width * 0.30)   # 中间：30%
+    right_width = width - left_width - middle_width  # 右侧：剩余部分
+    
+    # 分界线位置
+    line1_x = left_width
+    line2_x = left_width + middle_width
+    
+    # 绘制竖线分区（细线，不顶格，参考天气预报样式）
+    draw.line([(line1_x, margin_y), (line1_x, height - margin_y)], fill=0, width=1)
+    draw.line([(line2_x, margin_y), (line2_x, height - margin_y)], fill=0, width=1)
+    
+    # ========== 左侧：日历信息 ==========
+    left_margin = 15
     y = 10
+    
+    # 第一行：日期
     date_str = cal_data.get("date", "")
-    weekday_str = cal_data.get("weekday", "")
+    draw.text((left_margin, y), date_str, font=font_large, fill=0, stroke_width=stroke_large, stroke_fill=0)
     
-    # 日期（左侧）
-    draw.text((10, y), date_str, font=font_large, fill=0, stroke_width=stroke_large, stroke_fill=0)
-    
-    # 星期（右侧对齐）
-    weekday_bbox = draw.textbbox((0, 0), weekday_str, font=font_medium)
-    weekday_width = weekday_bbox[2] - weekday_bbox[0]
-    weekday_x = width - weekday_width - 10
-    draw.text((weekday_x, y + 5), weekday_str, font=font_medium, fill=0, stroke_width=stroke_medium, stroke_fill=0)
-    
-    # 第二行：农历（左侧）
+    # 第二行：星期
     y = 50
-    lunar = cal_data.get("lunar", "")
-    if lunar:
-        draw.text((10, y), lunar, font=font_small, fill=0, stroke_width=stroke_small, stroke_fill=0)
+    weekday_str = cal_data.get("weekday", "")
+    if weekday_str:
+        draw.text((left_margin, y), weekday_str, font=font_medium, fill=0, stroke_width=stroke_medium, stroke_fill=0)
     
-    # 第三行：节假日/节气（如果有，显示在右侧或下方）
+    # 第三行：农历+节假日/节气
+    y = 80
+    lunar = cal_data.get("lunar", "")
     extra = cal_data.get("extra", "")
-    if extra:
-        # 如果农历较短，可以放在同一行的右侧；否则放在下一行
-        if lunar:
-            lunar_bbox = draw.textbbox((0, 0), lunar, font=font_small)
-            lunar_width = lunar_bbox[2] - lunar_bbox[0]
-            # 如果农历较短，节假日放在同一行右侧
-            if lunar_width < width // 2:
-                extra_x = width // 2 + 20
-                draw.text((extra_x, y), extra, font=font_small, fill=0, stroke_width=stroke_small, stroke_fill=0)
-            else:
-                # 否则放在下一行
-                y += 28
-                draw.text((10, y), extra, font=font_small, fill=0, stroke_width=stroke_small, stroke_fill=0)
-        else:
-            # 没有农历，直接显示在第二行
-            draw.text((10, y), extra, font=font_small, fill=0, stroke_width=stroke_small, stroke_fill=0)
+    if lunar or extra:
+        draw.text((left_margin, y), lunar + " " + extra, font=font_small, fill=0, stroke_width=stroke_small, stroke_fill=0)
+    
+    # ========== 中间：日出日落 ==========
+    middle_margin = line1_x + 10
+    icon_size = 20  # 太阳图标大小
+    
+    # 获取日出日落时间和月相
+    now = datetime.now()
+    try:
+        tz = ZoneInfo(DEFAULT_TIMEZONE)
+        location = LocationInfo("Beijing", "China", DEFAULT_TIMEZONE, DEFAULT_LATITUDE, DEFAULT_LONGITUDE)
+        s = sun(location.observer, date=now.date(), tzinfo=tz)
+        sunrise = s["sunrise"].strftime("%H:%M")
+        sunset = s["sunset"].strftime("%H:%M")
+        
+        # 计算月相
+        phase_days = moon_phase_func(now.date())
+        phase_normalized = (phase_days % 29.5) / 29.5
+        moon_phase_name = get_moon_phase_name(phase_days)
+        
+        # 日出日落文字（在中间区域居中）
+        middle_area_start = line1_x
+        middle_area_width = middle_width
+        
+        # 第一行：日出时间（居中）
+        sunrise_text = f"日出 {sunrise}"
+        sunrise_bbox = draw.textbbox((0, 0), sunrise_text, font=font_sun)
+        sunrise_width = sunrise_bbox[2] - sunrise_bbox[0]
+        sunrise_x = middle_area_start + (middle_area_width - sunrise_width) // 2
+        y = 40
+        draw.text((sunrise_x, y), sunrise_text, font=font_sun, fill=0, stroke_width=stroke_sun, stroke_fill=0)
+        
+        # 第二行：日落时间（居中）
+        sunset_text = f"日落 {sunset}"
+        sunset_bbox = draw.textbbox((0, 0), sunset_text, font=font_sun)
+        sunset_width = sunset_bbox[2] - sunset_bbox[0]
+        sunset_x = middle_area_start + (middle_area_width - sunset_width) // 2
+        y = 65
+        draw.text((sunset_x, y), sunset_text, font=font_sun, fill=0, stroke_width=stroke_sun, stroke_fill=0)
+        
+        # ========== 右侧：月相 ==========
+        right_margin = line2_x + 10
+        right_area_width = width - line2_x
+        
+        # 月相图（在右侧区域居中，往上挪一点）
+        moon_radius = 25
+        moon_center_x = line2_x + right_area_width // 2
+        moon_center_y = height // 2 - 10  # 往上挪10像素
+        
+        # 绘制月相图
+        draw_moon_phase(img, moon_center_x, moon_center_y, moon_radius, phase_normalized)
+        
+        # 月相名称（月相图下方，居中）
+        name_y = moon_center_y + moon_radius + 5
+        name_bbox = draw.textbbox((0, 0), moon_phase_name, font=font_small)
+        name_width = name_bbox[2] - name_bbox[0]
+        name_x = moon_center_x - name_width // 2
+        draw.text((name_x, name_y), moon_phase_name, font=font_small, fill=0, stroke_width=stroke_small, stroke_fill=0)
+        
+    except Exception as e:
+        logger.warning(f"获取日出日落时间或月相失败: {e}", exc_info=True)
     
     # 存一下
     img.save("test_images/cal.png")
@@ -588,7 +823,7 @@ def render_forecast_bitmap(forecast_list: list, width: int = 304, height: int = 
     
     # 字体设置
     font_day, stroke_day = load_chinese_font(24, bold=True)  # 日期
-    font_text, stroke_text = load_chinese_font(20)  # 天气文字
+    font_text, stroke_text = load_chinese_font(22)  # 天气文字
     font_temp, stroke_temp = load_chinese_font(22, bold=True)  # 温度
     
     # 每天的高度
@@ -596,7 +831,7 @@ def render_forecast_bitmap(forecast_list: list, width: int = 304, height: int = 
     icon_size = 40  # 图标大小
     
     # 边距
-    margin_x = 10
+    margin_x = 18
     margin_y = 8
     
     for i, day_data in enumerate(forecast_list[:3]):  # 最多显示3天
@@ -604,12 +839,14 @@ def render_forecast_bitmap(forecast_list: list, width: int = 304, height: int = 
         
         # 日期（日）
         day = day_data.get("day", "")
+        # 补齐到两位，注意day是str类型
+        day = day.zfill(2)
         if day:
-            draw.text((margin_x, y_start + margin_y), day, font=font_day, fill=0, stroke_width=stroke_day, stroke_fill=0)
+            draw.text((margin_x, y_start + margin_y), day+"日", font=font_day, fill=0, stroke_width=stroke_day, stroke_fill=0)
         
         # 天气图标（居中偏左）
         icon_code = day_data.get("icon", "")
-        icon_x = margin_x + 40
+        icon_x = margin_x + 70
         icon_y = y_start + margin_y
         if icon_code:
             icon_img = load_weather_icon(icon_code, icon_size)
@@ -622,15 +859,15 @@ def render_forecast_bitmap(forecast_list: list, width: int = 304, height: int = 
         if text:
             draw.text((text_x, y_start + margin_y + 5), text, font=font_text, fill=0, stroke_width=stroke_text, stroke_fill=0)
         
-        # 温度（底部，居中）
+        # 温度 右对齐
         temp_max = day_data.get("tempMax", "")
         temp_min = day_data.get("tempMin", "")
         if temp_max and temp_min:
             temp_str = f"{temp_min}~{temp_max}°C"
             temp_bbox = draw.textbbox((0, 0), temp_str, font=font_temp)
             temp_width = temp_bbox[2] - temp_bbox[0]
-            temp_x = (width - temp_width) // 2
-            temp_y = y_start + day_height - 30
+            temp_x = width - temp_width - margin_x
+            temp_y = y_start + margin_y + 3 # 不知道为啥，需要往下点才能对齐
             draw.text((temp_x, temp_y), temp_str, font=font_temp, fill=0, stroke_width=stroke_temp, stroke_fill=0)
         
         # 绘制分隔线（除了最后一天）
@@ -645,19 +882,68 @@ def render_forecast_bitmap(forecast_list: list, width: int = 304, height: int = 
     return image_to_1bit_bitmap(img, invert=False)
 
 
-def render_note_bitmap(note_list: list, width: int = 496, height: int = 128) -> bytes:
-    """渲染笔记列表为原始1-bit位图数据（用于ESP32 drawBitmap）"""
+def render_progress_bitmap(progress_data: dict, width: int = 496, height: int = 128) -> bytes:
+    """渲染年/月/日进度条为原始1-bit位图数据（用于ESP32 drawBitmap）
+    
+    显示格式：
+    - 年进度 [进度条] 百分比
+    - 月进度 [进度条] 百分比
+    - 日进度 [进度条] 百分比
+    """
     img = Image.new('1', (width, height), 1)
     draw = ImageDraw.Draw(img)
     
-    font, stroke_width = load_chinese_font(24)
+    font_label, stroke_label = load_chinese_font(24)  # 标签字体
+    font_percent, stroke_percent = load_chinese_font(22)  # 百分比字体
     
-    y = 10
-    for i, note in enumerate(note_list[:5]):  # 最多显示5条（适配128高度）
-        draw.text((10, y), f"{i+1}. {note}", font=font, fill=0, stroke_width=stroke_width, stroke_fill=0)
-        y += 24
-        if y > height - 24:
-            break
+    # 边距和间距
+    margin_x = 10
+    margin_y = 10
+    line_height = 36  # 每行高度
+    progress_bar_height = 20  # 进度条高度
+    progress_bar_width = width - 200  # 进度条宽度（留出标签和百分比的空间）
+    
+    # 进度条位置
+    label_width = 80  # 标签宽度（"年进度"、"月进度"、"日进度"）
+    bar_x = margin_x + label_width + 10
+    bar_y_offset = (line_height - progress_bar_height) // 2
+    
+    # 进度条数据
+    progress_items = [
+        ("年进度", progress_data.get("year", 0)),
+        ("月进度", progress_data.get("month", 0)),
+        ("日进度", progress_data.get("day", 0)),
+    ]
+    
+    for i, (label, percent) in enumerate(progress_items):
+        y = margin_y + i * line_height
+        
+        # 绘制标签
+        draw.text((margin_x, y), label, font=font_label, fill=0, stroke_width=stroke_label, stroke_fill=0)
+        
+        # 绘制进度条背景（白色背景上的黑色边框）
+        bar_y = y + bar_y_offset
+        draw.rectangle(
+            [bar_x, bar_y, bar_x + progress_bar_width, bar_y + progress_bar_height],
+            outline=0,
+            width=2,
+            fill=1
+        )
+        
+        # 绘制进度条填充（黑色填充）
+        fill_width = int(progress_bar_width * (percent / 100))
+        if fill_width > 0:
+            draw.rectangle(
+                [bar_x, bar_y, bar_x + fill_width, bar_y + progress_bar_height],
+                fill=0
+            )
+        
+        # 绘制百分比（右对齐）
+        percent_text = f"{percent:.1f}%"
+        percent_bbox = draw.textbbox((0, 0), percent_text, font=font_percent)
+        percent_width = percent_bbox[2] - percent_bbox[0]
+        percent_x = width - percent_width - margin_x
+        draw.text((percent_x, y + 5), percent_text, font=font_percent, fill=0, stroke_width=stroke_percent, stroke_fill=0)
     
     # 存一下
     img.save("test_images/note.png")
@@ -683,7 +969,7 @@ async def get_info():
     sentence_bitmap = render_sentence_bitmap(data["sentence"])
     cal_bitmap = render_cal_bitmap(data["cal"])
     wx_bitmap = render_wx_bitmap(data["wx"])
-    note_bitmap = render_note_bitmap(data["note"])
+    progress_bitmap = render_progress_bitmap(data.get("progress", {}))
     forecast_bitmap = render_forecast_bitmap(data.get("forecast", []))
     
     return {
@@ -711,7 +997,7 @@ async def get_info():
             "format": "bitmap"
         },
         "note": {
-            "buffer": base64.b64encode(note_bitmap).decode('utf-8'),
+            "buffer": base64.b64encode(progress_bitmap).decode('utf-8'),
             "width": 496,
             "height": 128,
             "format": "bitmap"

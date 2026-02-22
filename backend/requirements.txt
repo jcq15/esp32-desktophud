@@ -8,3 +8,4 @@ holidays==0.91
 zhdate==0.1
 PyJWT==2.8.0
 cryptography==41.0.7
+astral==3.2
