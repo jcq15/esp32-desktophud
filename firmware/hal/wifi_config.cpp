@@ -20,12 +20,39 @@ void update_wifi_status(Scheduler* scheduler, const String& message) {
 bool try_saved_wifi(Scheduler* scheduler) {
     WiFiManager wm;
     
+    // 设置很短的超时时间，只用于尝试已保存的WiFi（不开启配置门户）
+    wm.setConfigPortalTimeout(10);  // 10秒超时
+    wm.setSaveConnectTimeout(15);    // 连接超时15秒
+    
     // 检查是否有已保存的WiFi配置
+    // 使用WiFiManager的方法读取，但需要先初始化
+    wm.setConfigPortalBlocking(false);  // 非阻塞模式
+    
+    // 尝试读取已保存的WiFi
     String savedSSID = wm.getWiFiSSID(true);  // true表示从NVS读取
     String savedPass = wm.getWiFiPass(true);
     
-    if (savedSSID.length() == 0) {
-        Serial.println("No saved WiFi config");
+    // 验证读取到的数据是否有效
+    if (savedSSID.length() == 0 || savedSSID.length() > 32) {
+        Serial.println("No saved WiFi config found");
+        return false;
+    }
+    
+    // 检查SSID是否包含有效字符（避免乱码）
+    bool isValid = true;
+    for (int i = 0; i < savedSSID.length(); i++) {
+        unsigned char c = savedSSID.charAt(i);
+        // SSID应该是可打印ASCII字符（32-126）或UTF-8字符
+        // 但为了简单，我们检查是否在合理范围内
+        if (c < 32 && c != 0) {  // 允许null终止符，但不允许其他控制字符
+            isValid = false;
+            break;
+        }
+    }
+    
+    if (!isValid) {
+        Serial.println("Invalid saved WiFi config (corrupted), clearing...");
+        wm.resetSettings();  // 清除损坏的配置
         return false;
     }
     
@@ -35,19 +62,17 @@ bool try_saved_wifi(Scheduler* scheduler) {
     String statusMsg = "Connecting to " + savedSSID + "...";
     update_wifi_status(scheduler, statusMsg);
     
+    // 使用WiFiManager的autoConnect来尝试连接已保存的WiFi
+    // 注意：如果已保存WiFi失败，由于超时时间很短，不会开启配置门户
     WiFi.mode(WIFI_STA);
-    WiFi.begin(savedSSID.c_str(), savedPass.c_str());
     
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-        delay(500);
-        Serial.print(".");
-        attempts++;
-    }
+    // 使用空的AP名称，这样如果连接失败，不会开启配置门户
+    // 但我们需要确保它真的尝试了已保存的WiFi
+    bool connected = wm.autoConnect("", "");  // 空字符串表示不开启配置门户
     
-    if (WiFi.status() == WL_CONNECTED) {
+    if (connected && WiFi.status() == WL_CONNECTED) {
         Serial.println();
-        Serial.print("Connected! IP: ");
+        Serial.print("Connected using saved WiFi! IP: ");
         Serial.println(WiFi.localIP());
         update_wifi_status(scheduler, "WiFi connected");
         return true;
@@ -122,11 +147,22 @@ bool start_config_portal(Scheduler* scheduler) {
     wm.setConfigPortalTimeout(WIFI_MANAGER_TIMEOUT_SEC);
     
     // 开启配置门户，等待用户配置
+    // autoConnect会自动保存WiFi凭据到NVS
     bool connected = wm.autoConnect(WIFI_MANAGER_AP_NAME, WIFI_MANAGER_AP_PASSWORD);
     
     if (connected) {
         Serial.print("Connected via portal! IP: ");
         Serial.println(WiFi.localIP());
+        
+        // 验证WiFi凭据是否已保存
+        String savedSSID = wm.getWiFiSSID(true);
+        if (savedSSID.length() > 0 && savedSSID.length() <= 32) {
+            Serial.print("WiFi credentials saved: ");
+            Serial.println(savedSSID);
+        } else {
+            Serial.println("Warning: WiFi credentials may not be saved correctly");
+        }
+        
         update_wifi_status(scheduler, "WiFi connected");
         return true;
     } else {
